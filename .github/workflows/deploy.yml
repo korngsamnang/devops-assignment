@@ -6,36 +6,39 @@ on:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+  runs-on: ubuntu-latest
 
-    outputs:
-      short_sha: ${{ steps.vars_step.outputs.SHORT_SHA }}
+  outputs:
+    short_sha: ${{ steps.vars_step.outputs.SHORT_SHA }}
 
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+  steps:
+  - name: Checkout code
+    uses: actions/checkout@v3
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ vars.AWS_REGION }}
+  - name: Configure AWS credentials
+    uses: aws-actions/configure-aws-credentials@v2
+    with:
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      aws-region: ${{ vars.AWS_REGION }}
 
-    - name: Login to Amazon ECR
-      uses: aws-actions/amazon-ecr-login@v1
+  - name: Login to Amazon ECR
+    id: login-ecr
+    uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Extract short SHA
-      id: vars_step
-      run: echo "SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_OUTPUT
+  - name: Extract short SHA
+    id: vars_step
+    run: echo "SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_OUTPUT
 
-    - name: Build & Push Docker Image
-      env:
-        SHORT_SHA: ${{ steps.vars_step.outputs.SHORT_SHA }}
-      run: |
-        docker build -t ${{ vars.ECR_REPOSITORY }} .
-        docker tag ${{ vars.ECR_REPOSITORY }}:latest ${{ vars.ECR_REGISTRY }}/${{ vars.ECR_REPOSITORY }}:$SHORT_SHA
-        docker push ${{ vars.ECR_REGISTRY }}/${{ vars.ECR_REPOSITORY }}:$SHORT_SHA
+  - name: Build & Push Docker Image
+    env:
+      REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      SHORT_SHA: ${{ steps.vars_step.outputs.SHORT_SHA }}
+    run: |
+      docker build -t $REPOSITORY .
+      docker tag $REPOSITORY:latest $REGISTRY/$REPOSITORY:$SHORT_SHA
+      docker push $REGISTRY/$REPOSITORY:$SHORT_SHA
 
   deploy:
     runs-on: ubuntu-latest
