@@ -10,7 +10,7 @@ jobs:
 
     outputs:
       short_sha: ${{ steps.vars_step.outputs.SHORT_SHA }}
-      registry: ${{ steps.login-ecr.outputs.registry }}
+      full_image: ${{ steps.build_push_step.outputs.FULL_IMAGE }}
 
     steps:
     - name: Checkout code
@@ -32,14 +32,22 @@ jobs:
       run: echo "SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_OUTPUT
 
     - name: Build & Push Docker Image
+      id: build_push_step
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         REPOSITORY: ${{ vars.ECR_REPOSITORY }}
         SHORT_SHA: ${{ steps.vars_step.outputs.SHORT_SHA }}
       run: |
-        docker build -t $REPOSITORY .
-        docker tag $REPOSITORY:latest $REGISTRY/$REPOSITORY:$SHORT_SHA
-        docker push $REGISTRY/$REPOSITORY:$SHORT_SHA
+        IMAGE="$REGISTRY/$REPOSITORY:$SHORT_SHA"
+
+        # Build image
+        docker build -t "$IMAGE" .
+
+        # Push
+        docker push "$IMAGE"
+
+        echo "FULL_IMAGE=$IMAGE" >> $GITHUB_OUTPUT
+        echo "Pushed $IMAGE"
 
   deploy:
     runs-on: ubuntu-latest
@@ -62,25 +70,15 @@ jobs:
           --region ${{ vars.AWS_REGION }} \
           --name ${{ vars.EKS_CLUSTER_NAME }}
 
-    - name: Inject values into deployment manifest
+    - name: Inject image name into manifest
       env:
-        SHORT_SHA: ${{ needs.build-and-push.outputs.short_sha }}
-        REGISTRY: ${{ needs.build-and-push.outputs.registry }}
-        REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        FULL_IMAGE: ${{ needs.build-and-push.outputs.full_image }}
       run: |
-        FULL_IMAGE="$REGISTRY/$REPOSITORY:$SHORT_SHA"
-        echo "Full image URL: $FULL_IMAGE"
+        echo "Using image: $FULL_IMAGE"
         sed -i "s|IMAGE_NAME|$FULL_IMAGE|g" k8s/deployment.yaml
-        echo "Deployment file after substitution:"
-        cat k8s/deployment.yaml
 
     - name: Apply Kubernetes manifests
       run: |
         kubectl apply -f k8s/namespace.yaml
         kubectl apply -f k8s/deployment.yaml
         kubectl apply -f k8s/service.yaml
-
-    - name: Verify deployment
-      run: |
-        kubectl rollout status deployment/devops-app -n devops --timeout=5m
-        kubectl get pods -n devops
