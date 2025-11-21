@@ -8,8 +8,9 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
+    # We only pass the short SHA to the next job
     outputs:
-      IMAGE: ${{ steps.export_image.outputs.IMAGE }}
+      short_sha: ${{ steps.vars_step.outputs.SHORT_SHA }}
 
     steps:
     - name: Checkout code
@@ -27,25 +28,23 @@ jobs:
       uses: aws-actions/amazon-ecr-login@v2
 
     - name: Extract short SHA
-      id: sha
-      run: echo "SHA=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_ENV
+      id: vars_step
+      run: |
+        SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+        echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
+        echo "Short SHA: ${SHORT_SHA}"
 
     - name: Build & Push Docker Image
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        REPOSITORY: ${{ vars.ECR_REPOSITORY }} # devops-assignment
+        SHORT_SHA: ${{ steps.vars_step.outputs.SHORT_SHA }}
       run: |
-        IMAGE="$REGISTRY/$REPOSITORY:${SHA}"
-        echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+        IMAGE="${REGISTRY}/${REPOSITORY}:${SHORT_SHA}"
+        echo "Building image: ${IMAGE}"
 
-        docker build -t "$IMAGE" .
-        docker push "$IMAGE"
-
-    - name: Export IMAGE for next job (NO MASKING)
-      id: export_image
-      run: |
-        echo "IMAGE=${IMAGE}" 
-        echo "IMAGE=${IMAGE}" >> $GITHUB_OUTPUT
+        docker build -t "${IMAGE}" .
+        docker push "${IMAGE}"
 
   deploy:
     runs-on: ubuntu-latest
@@ -62,21 +61,35 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ vars.AWS_REGION }}
 
+    - name: Login to Amazon ECR (for registry value)
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
     - name: Update kubeconfig
       run: |
         aws eks update-kubeconfig \
           --region ${{ vars.AWS_REGION }} \
           --name ${{ vars.EKS_CLUSTER_NAME }}
 
-    - name: Inject image
+    - name: Inject image into deployment manifest
       env:
-        IMAGE: ${{ needs.build-and-push.outputs.IMAGE }}
+        REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        REPOSITORY: ${{ vars.ECR_REPOSITORY }} # devops-assignment
+        SHORT_SHA: ${{ needs.build-and-push.outputs.short_sha }}
       run: |
-        echo "Using IMAGE: $IMAGE"
-        sed -i "s|IMAGE_NAME|$IMAGE|g" k8s/deployment.yaml
+        IMAGE="${REGISTRY}/${REPOSITORY}:${SHORT_SHA}"
+        echo "Using image: ${IMAGE}"
+
+        if [ -z "${IMAGE}" ]; then
+          echo "ERROR: IMAGE is empty"
+          exit 1
+        fi
+
+        sed -i "s|IMAGE_NAME|${IMAGE}|g" k8s/deployment.yaml
+        echo "Updated deployment.yaml:"
         cat k8s/deployment.yaml
 
-    - name: Deploy
+    - name: Apply Kubernetes manifests
       run: |
         kubectl apply -f k8s/namespace.yaml
         kubectl apply -f k8s/deployment.yaml
