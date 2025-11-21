@@ -27,28 +27,53 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
+    - name: DEBUG — Show ECR Login Output
+      run: |
+        echo "DEBUG: steps.login-ecr.outputs.registry = '${{ steps.login-ecr.outputs.registry }}'"
+
     - name: Extract short SHA
       id: vars_step
-      run: echo SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-7) >> $GITHUB_OUTPUT
+      run: |
+        SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-7)
+        echo "DEBUG: SHORT_SHA = $SHORT_SHA"
+        echo SHORT_SHA=$SHORT_SHA >> $GITHUB_OUTPUT
 
-    - name: Build & Push Docker Image
+    - name: Build & Push Docker Image (with debug)
       id: build_push_step
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         REPOSITORY: ${{ vars.ECR_REPOSITORY }}
         SHORT_SHA: ${{ steps.vars_step.outputs.SHORT_SHA }}
       run: |
-        IMAGE="$REGISTRY/$REPOSITORY:$SHORT_SHA"
+        echo "============== DEBUG VARIABLES =============="
+        echo "REGISTRY   = '$REGISTRY'"
+        echo "REPOSITORY = '$REPOSITORY'"
+        echo "SHORT_SHA  = '$SHORT_SHA'"
+        echo "============================================="
 
-        echo "Building image: $IMAGE"
+        IMAGE="$REGISTRY/$REPOSITORY:$SHORT_SHA"
+        echo "DEBUG: Full IMAGE = '$IMAGE'"
+
+        if [ -z "$REGISTRY" ]; then
+          echo "ERROR: REGISTRY is EMPTY"
+        fi
+
+        if [ -z "$REPOSITORY" ]; then
+          echo "ERROR: REPOSITORY is EMPTY"
+        fi
+
+        if [ -z "$SHORT_SHA" ]; then
+          echo "ERROR: SHORT_SHA is EMPTY"
+        fi
+
+        echo "Building Docker image..."
         docker build -t "$IMAGE" .
 
-        echo "Pushing image..."
+        echo "Pushing Docker image..."
         docker push "$IMAGE"
 
-        # Must NOT use quotes
         echo FULL_IMAGE=$IMAGE >> $GITHUB_OUTPUT
-        echo "Output FULL_IMAGE=$IMAGE"
+        echo "DEBUG: FULL_IMAGE saved as '$IMAGE'"
 
   deploy:
     runs-on: ubuntu-latest
@@ -71,23 +96,23 @@ jobs:
           --region ${{ vars.AWS_REGION }} \
           --name ${{ vars.EKS_CLUSTER_NAME }}
 
+    - name: DEBUG — Show FULL_IMAGE Passed to Deploy
+      env:
+        FULL_IMAGE: ${{ needs.build-and-push.outputs.full_image }}
+      run: |
+        echo "============== DEBUG DEPLOY =============="
+        echo "FULL_IMAGE = '$FULL_IMAGE'"
+        echo "=========================================="
+
+        if [ -z "$FULL_IMAGE" ]; then
+          echo "ERROR: FULL_IMAGE is EMPTY (coming from build job)"
+          exit 1
+        fi
+
     - name: Inject image name into deployment manifest
       env:
         FULL_IMAGE: ${{ needs.build-and-push.outputs.full_image }}
       run: |
         echo "Using image: $FULL_IMAGE"
-
-        if [ -z "$FULL_IMAGE" ]; then
-            echo "ERROR: FULL_IMAGE is empty!"
-            exit 1
-        fi
-
         sed -i "s|IMAGE_NAME|$FULL_IMAGE|g" k8s/deployment.yaml
-        echo "Updated deployment.yaml:"
-        cat k8s/deployment.yaml
-
-    - name: Apply Kubernetes manifests
-      run: |
-        kubectl apply -f k8s/namespace.yaml
-        kubectl apply -f k8s/deployment.yaml
-        kubectl apply -f k8s/service.yaml
+        echo "Updated deplo
