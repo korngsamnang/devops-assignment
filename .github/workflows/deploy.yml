@@ -29,7 +29,7 @@ jobs:
 
     - name: Extract short SHA
       id: vars_step
-      run: echo "SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_OUTPUT
+      run: echo SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-7) >> $GITHUB_OUTPUT
 
     - name: Build & Push Docker Image
       id: build_push_step
@@ -40,14 +40,15 @@ jobs:
       run: |
         IMAGE="$REGISTRY/$REPOSITORY:$SHORT_SHA"
 
-        # Build image
+        echo "Building image: $IMAGE"
         docker build -t "$IMAGE" .
 
-        # Push
+        echo "Pushing image..."
         docker push "$IMAGE"
 
-        echo "FULL_IMAGE=$IMAGE" >> $GITHUB_OUTPUT
-        echo "Pushed $IMAGE"
+        # Must NOT use quotes
+        echo FULL_IMAGE=$IMAGE >> $GITHUB_OUTPUT
+        echo "Output FULL_IMAGE=$IMAGE"
 
   deploy:
     runs-on: ubuntu-latest
@@ -70,12 +71,20 @@ jobs:
           --region ${{ vars.AWS_REGION }} \
           --name ${{ vars.EKS_CLUSTER_NAME }}
 
-    - name: Inject image name into manifest
+    - name: Inject image name into deployment manifest
       env:
         FULL_IMAGE: ${{ needs.build-and-push.outputs.full_image }}
       run: |
         echo "Using image: $FULL_IMAGE"
+
+        if [ -z "$FULL_IMAGE" ]; then
+            echo "ERROR: FULL_IMAGE is empty!"
+            exit 1
+        fi
+
         sed -i "s|IMAGE_NAME|$FULL_IMAGE|g" k8s/deployment.yaml
+        echo "Updated deployment.yaml:"
+        cat k8s/deployment.yaml
 
     - name: Apply Kubernetes manifests
       run: |
