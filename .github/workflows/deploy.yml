@@ -76,3 +76,7 @@ jobs:
         kubectl apply -f k8s/namespace.yaml
         kubectl apply -f k8s/deployment.yaml
         kubectl apply -f k8s/service.yaml
+
+    - name: Wait for Deployment Rollout
+      run: |
+        kubectl rollout status deployment/devops-app -n devops --timeout=180s
