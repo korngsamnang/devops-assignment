@@ -9,8 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     outputs:
-      short_sha: ${{ steps.vars_step.outputs.SHORT_SHA }}
-      full_image: ${{ steps.build_push_step.outputs.FULL_IMAGE }}
+      IMAGE: ${{ steps.export_image.outputs.IMAGE }}
 
     steps:
     - name: Checkout code
@@ -27,53 +26,26 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: DEBUG — Show ECR Login Output
-      run: |
-        echo "DEBUG: steps.login-ecr.outputs.registry = '${{ steps.login-ecr.outputs.registry }}'"
-
     - name: Extract short SHA
-      id: vars_step
-      run: |
-        SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-7)
-        echo "DEBUG: SHORT_SHA = $SHORT_SHA"
-        echo SHORT_SHA=$SHORT_SHA >> $GITHUB_OUTPUT
+      id: sha
+      run: echo "SHA=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_ENV
 
-    - name: Build & Push Docker Image (with debug)
-      id: build_push_step
+    - name: Build & Push Docker Image
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-        SHORT_SHA: ${{ steps.vars_step.outputs.SHORT_SHA }}
       run: |
-        echo "============== DEBUG VARIABLES =============="
-        echo "REGISTRY   = '$REGISTRY'"
-        echo "REPOSITORY = '$REPOSITORY'"
-        echo "SHORT_SHA  = '$SHORT_SHA'"
-        echo "============================================="
+        IMAGE="$REGISTRY/$REPOSITORY:${SHA}"
+        echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-        IMAGE="$REGISTRY/$REPOSITORY:$SHORT_SHA"
-        echo "DEBUG: Full IMAGE = '$IMAGE'"
-
-        if [ -z "$REGISTRY" ]; then
-          echo "ERROR: REGISTRY is EMPTY"
-        fi
-
-        if [ -z "$REPOSITORY" ]; then
-          echo "ERROR: REPOSITORY is EMPTY"
-        fi
-
-        if [ -z "$SHORT_SHA" ]; then
-          echo "ERROR: SHORT_SHA is EMPTY"
-        fi
-
-        echo "Building Docker image..."
         docker build -t "$IMAGE" .
-
-        echo "Pushing Docker image..."
         docker push "$IMAGE"
 
-        echo FULL_IMAGE=$IMAGE >> $GITHUB_OUTPUT
-        echo "DEBUG: FULL_IMAGE saved as '$IMAGE'"
+    - name: Export IMAGE for next job (NO MASKING)
+      id: export_image
+      run: |
+        echo "IMAGE=${IMAGE}" 
+        echo "IMAGE=${IMAGE}" >> $GITHUB_OUTPUT
 
   deploy:
     runs-on: ubuntu-latest
@@ -96,23 +68,16 @@ jobs:
           --region ${{ vars.AWS_REGION }} \
           --name ${{ vars.EKS_CLUSTER_NAME }}
 
-    - name: DEBUG — Show FULL_IMAGE Passed to Deploy
+    - name: Inject image
       env:
-        FULL_IMAGE: ${{ needs.build-and-push.outputs.full_image }}
+        IMAGE: ${{ needs.build-and-push.outputs.IMAGE }}
       run: |
-        echo "============== DEBUG DEPLOY =============="
-        echo "FULL_IMAGE = '$FULL_IMAGE'"
-        echo "=========================================="
+        echo "Using IMAGE: $IMAGE"
+        sed -i "s|IMAGE_NAME|$IMAGE|g" k8s/deployment.yaml
+        cat k8s/deployment.yaml
 
-        if [ -z "$FULL_IMAGE" ]; then
-          echo "ERROR: FULL_IMAGE is EMPTY (coming from build job)"
-          exit 1
-        fi
-
-    - name: Inject image name into deployment manifest
-      env:
-        FULL_IMAGE: ${{ needs.build-and-push.outputs.full_image }}
+    - name: Deploy
       run: |
-        echo "Using image: $FULL_IMAGE"
-        sed -i "s|IMAGE_NAME|$FULL_IMAGE|g" k8s/deployment.yaml
-        echo "Updated deplo
+        kubectl apply -f k8s/namespace.yaml
+        kubectl apply -f k8s/deployment.yaml
+        kubectl apply -f k8s/service.yaml
