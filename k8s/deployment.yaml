@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: devops-app
-        image: REGISTRY/REPOSITORY:IMAGE_TAG
+        image: IMAGE_NAME
         ports:
         - containerPort: 8080
         env:

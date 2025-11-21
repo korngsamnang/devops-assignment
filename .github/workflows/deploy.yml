@@ -68,8 +68,8 @@ jobs:
         REGISTRY: ${{ needs.build-and-push.outputs.registry }}
         REPOSITORY: ${{ vars.ECR_REPOSITORY }}
       run: |
-        sed -i "s|IMAGE_TAG|$SHORT_SHA|g" k8s/deployment.yaml
-        sed -i "s|<AWS_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/devops-assignment|$REGISTRY/$REPOSITORY|g" k8s/deployment.yaml
+        FULL_IMAGE="$REGISTRY/$REPOSITORY:$SHORT_SHA"
+        sed -i "s|IMAGE_NAME|$FULL_IMAGE|g" k8s/deployment.yaml
 
     - name: Apply Kubernetes manifests
       run: |
