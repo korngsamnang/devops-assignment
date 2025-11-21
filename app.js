@@ -5,7 +5,7 @@ const PORT = process.env.PORT || 8080;
 
 app.get("/api/hello", (req, res) => {
     res.json({
-        message: "Hello from DevOps Assignment!",
+        message: "Hello from DevOps Assignment😊",
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV || "development",
     });
