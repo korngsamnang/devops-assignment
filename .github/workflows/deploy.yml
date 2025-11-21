@@ -8,9 +8,8 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
-    # We only pass the short SHA to the next job
     outputs:
-      short_sha: ${{ steps.vars_step.outputs.SHORT_SHA }}
+      short_sha: ${{ steps.sha.outputs.SHORT_SHA }}
 
     steps:
     - name: Checkout code
@@ -27,22 +26,17 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Extract short SHA
-      id: vars_step
-      run: |
-        SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
-        echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
-        echo "Short SHA: ${SHORT_SHA}"
+    - name: Extract Git SHA (short)
+      id: sha
+      run: echo "SHORT_SHA=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_OUTPUT
 
     - name: Build & Push Docker Image
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        REPOSITORY: ${{ vars.ECR_REPOSITORY }} # devops-assignment
-        SHORT_SHA: ${{ steps.vars_step.outputs.SHORT_SHA }}
+        REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        SHORT_SHA: ${{ steps.sha.outputs.SHORT_SHA }}
       run: |
         IMAGE="${REGISTRY}/${REPOSITORY}:${SHORT_SHA}"
-        echo "Building image: ${IMAGE}"
-
         docker build -t "${IMAGE}" .
         docker push "${IMAGE}"
 
@@ -61,7 +55,7 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ vars.AWS_REGION }}
 
-    - name: Login to Amazon ECR (for registry value)
+    - name: Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
@@ -71,26 +65,14 @@ jobs:
           --region ${{ vars.AWS_REGION }} \
           --name ${{ vars.EKS_CLUSTER_NAME }}
 
-    - name: Inject image into deployment manifest
+    - name: Apply Deployment Manifest With New Image
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        REPOSITORY: ${{ vars.ECR_REPOSITORY }} # devops-assignment
+        REPOSITORY: ${{ vars.ECR_REPOSITORY }}
         SHORT_SHA: ${{ needs.build-and-push.outputs.short_sha }}
       run: |
         IMAGE="${REGISTRY}/${REPOSITORY}:${SHORT_SHA}"
-        echo "Using image: ${IMAGE}"
-
-        if [ -z "${IMAGE}" ]; then
-          echo "ERROR: IMAGE is empty"
-          exit 1
-        fi
-
         sed -i "s|IMAGE_NAME|${IMAGE}|g" k8s/deployment.yaml
-        echo "Updated deployment.yaml:"
-        cat k8s/deployment.yaml
-
-    - name: Apply Kubernetes manifests
-      run: |
         kubectl apply -f k8s/namespace.yaml
         kubectl apply -f k8s/deployment.yaml
         kubectl apply -f k8s/service.yaml
