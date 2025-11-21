@@ -10,6 +10,7 @@ jobs:
 
     outputs:
       short_sha: ${{ steps.vars_step.outputs.SHORT_SHA }}
+      registry: ${{ steps.login-ecr.outputs.registry }}
 
     steps:
     - name: Checkout code
@@ -61,11 +62,14 @@ jobs:
           --region ${{ vars.AWS_REGION }} \
           --name ${{ vars.EKS_CLUSTER_NAME }}
 
-    - name: Inject image version into deployment manifest
+    - name: Inject values into deployment manifest
       env:
         SHORT_SHA: ${{ needs.build-and-push.outputs.short_sha }}
+        REGISTRY: ${{ needs.build-and-push.outputs.registry }}
+        REPOSITORY: ${{ vars.ECR_REPOSITORY }}
       run: |
         sed -i "s|IMAGE_TAG|$SHORT_SHA|g" k8s/deployment.yaml
+        sed -i "s|<AWS_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/devops-assignment|$REGISTRY/$REPOSITORY|g" k8s/deployment.yaml
 
     - name: Apply Kubernetes manifests
       run: |
