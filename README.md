@@ -142,14 +142,22 @@ The GitHub Actions pipeline (`.github/workflows/deploy.yml`) automates the entir
 3. Apply Kubernetes manifests
 4. Wait for deployment rollout
 
-### GitHub Secrets Required
+### GitHub Variables & Secrets
 
-Add these secrets in your repository settings (`Settings` → `Secrets and variables` → `Actions`):
+Go to: **Settings → Secrets and variables → Actions → Secrets**
 
 | Secret Name             | Description         |
 | ----------------------- | ------------------- |
 | `AWS_ACCESS_KEY_ID`     | Your AWS access key |
 | `AWS_SECRET_ACCESS_KEY` | Your AWS secret key |
+
+Go to: **Settings → Secrets and variables → Actions → Variables**
+
+| Variable           | Example             | Description         |
+| ------------------ | ------------------- | ------------------- |
+| `AWS_REGION`       | `ap-southeast-1`    | AWS region          |
+| `ECR_REPOSITORY`   | `devops-assignment` | ECR Repository name |
+| `EKS_CLUSTER_NAME` | `my-eks`            | EKS Cluster name    |
 
 ### AWS Setup
 
