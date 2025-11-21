@@ -69,10 +69,18 @@ jobs:
         REPOSITORY: ${{ vars.ECR_REPOSITORY }}
       run: |
         FULL_IMAGE="$REGISTRY/$REPOSITORY:$SHORT_SHA"
+        echo "Full image URL: $FULL_IMAGE"
         sed -i "s|IMAGE_NAME|$FULL_IMAGE|g" k8s/deployment.yaml
+        echo "Deployment file after substitution:"
+        cat k8s/deployment.yaml
 
     - name: Apply Kubernetes manifests
       run: |
         kubectl apply -f k8s/namespace.yaml
         kubectl apply -f k8s/deployment.yaml
         kubectl apply -f k8s/service.yaml
+
+    - name: Verify deployment
+      run: |
+        kubectl rollout status deployment/devops-app -n devops --timeout=5m
+        kubectl get pods -n devops
