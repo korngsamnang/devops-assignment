@@ -15,28 +15,9 @@ spec:
     spec:
       containers:
       - name: devops-app
-        image: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/devops-assignment:latest
+        image: <AWS_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/devops-assignment:IMAGE_TAG
         ports:
         - containerPort: 8080
         env:
         - name: NODE_ENV
-          value: "production"
-        resources:
-          requests:
-            memory: "128Mi"
-            cpu: "100m"
-          limits:
-            memory: "256Mi"
-            cpu: "200m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 5
+          value: production
